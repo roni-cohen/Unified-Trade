@@ -7,18 +7,8 @@ function yahooUrl(ticker, interval, range) {
 }
 
 async function fetchYahoo(ticker, interval, range) {
-  try {
-    const res = await fetch(yahooUrl(ticker, interval, range))
-
-    // Check if the response is successful and is JSON
-    if (!res.ok || !res.headers.get("content-type")?.includes("application/json")) {
-      throw new Error(`HTTP error! status: ${res.status} or not JSON`);
-    }
-    return await res.json();
-  } catch (error) {
-    // This matches your existing error handling pattern
-    return console.warn(`Failed to fetch ${ticker}:`, error.message), null;
-  }
+  const res = await fetch(yahooUrl(ticker, interval, range))
+  return res.json()
 }
 
 export async function fetchPrice(ticker) {
