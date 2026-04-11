@@ -1,17 +1,21 @@
 // src/pages/PortfolioDetailPage.jsx
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
-import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot } from '../lib/db'
+import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot, updatePortfolioCash } from '../lib/db'
 import { useLivePrices } from '../hooks/useLivePrices'
-import { fetchHistoricalData } from '../lib/stockApi'
+import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile } from '../lib/stockApi'
 import { usePortfolios } from '../hooks/usePortfolios'
 import { getSnapshots } from '../lib/db'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
 } from 'recharts'
-import { ArrowLeft, Plus, Trash2, Edit2, RefreshCw, TrendingUp, TrendingDown, X, Check } from 'lucide-react'
+import {
+  ArrowLeft, Plus, Trash2, Edit2, RefreshCw, TrendingUp, TrendingDown,
+  X, Check, DollarSign, ChevronUp, ChevronDown, ChevronsUpDown,
+  Newspaper, Info, ExternalLink, Wallet
+} from 'lucide-react'
 
 function fmtUSD(n) {
   if (n === undefined || n === null || isNaN(n)) return '—'
@@ -21,14 +25,41 @@ function fmtPct(n) {
   if (n === undefined || isNaN(n)) return '—'
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
+function timeAgo(date) {
+  if (!date) return ''
+  const diff = Date.now() - date.getTime()
+  const h = Math.floor(diff / 3600000)
+  const d = Math.floor(diff / 86400000)
+  if (h < 1) return 'Just now'
+  if (h < 24) return `${h}h ago`
+  return `${d}d ago`
+}
 
 const RANGES = ['1w', '1m', '3m', '6m', '1y']
+
+// Sortable columns config
+const SORT_COLS = [
+  { key: 'ticker',       label: 'Ticker' },
+  { key: 'shares',       label: 'Shares' },
+  { key: 'avgCost',      label: 'Avg Cost' },
+  { key: 'currentPrice', label: 'Price' },
+  { key: 'currentValue', label: 'Mkt Value' },
+  { key: 'costBasis',    label: 'Cost Basis' },
+  { key: 'gainLoss',     label: 'Gain/Loss' },
+  { key: 'dayChange',    label: 'Day Chg' },
+  { key: 'gainLossPct',  label: 'Return %' },
+]
+
+function SortIcon({ col, sortBy, sortDir }) {
+  if (sortBy !== col) return <ChevronsUpDown size={11} style={{ opacity: 0.3 }} />
+  return sortDir === 'asc' ? <ChevronUp size={11} color="var(--accent)" /> : <ChevronDown size={11} color="var(--accent)" />
+}
 
 export default function PortfolioDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
   const navigate = useNavigate()
-  const { portfolios } = usePortfolios()
+  const { portfolios, loading: portLoading } = usePortfolios()
   const portfolio = portfolios.find(p => p.id === id)
 
   const [positions, setPositions] = useState([])
@@ -43,7 +74,27 @@ export default function PortfolioDetailPage() {
   const [loadingHist, setLoadingHist] = useState(false)
   const [snapshots, setSnapshots] = useState([])
 
+  // Sorting
+  const [sortBy, setSortBy] = useState('currentValue')
+  const [sortDir, setSortDir] = useState('desc')
 
+  // Cash management
+  const [cashInput, setCashInput] = useState('')
+  const [showCashEditor, setShowCashEditor] = useState(false)
+  const [cashMode, setCashMode] = useState('set') // 'set' | 'add' | 'sell'
+  const [sellForm, setSellForm] = useState({ ticker: '', shares: '', price: '' })
+  const [savingCash, setSavingCash] = useState(false)
+
+  // News panel
+  const [newsPanel, setNewsPanel] = useState(null) // ticker or null
+  const [news, setNews] = useState([])
+  const [newsLoading, setNewsLoading] = useState(false)
+
+  // Descriptions panel
+  const [descPanel, setDescPanel] = useState(null) // ticker or null
+  const [profiles, setProfiles] = useState({}) // ticker -> profile
+  const [aiDesc, setAiDesc] = useState({}) // ticker -> text
+  const [descLoading, setDescLoading] = useState(false)
 
   useEffect(() => {
     const unsub = subscribePositions(id, data => setPositions(data))
@@ -55,7 +106,6 @@ export default function PortfolioDetailPage() {
 
   useEffect(() => {
     getSnapshots(id).then(data => {
-      // Deduplicate by date — keep latest value per day
       const byDate = {}
       data.forEach(s => { byDate[s.date] = s.totalValue })
       const chartData = Object.entries(byDate)
@@ -80,28 +130,121 @@ export default function PortfolioDetailPage() {
     return { ...pos, currentPrice, currentValue, costBasis, gainLoss, gainLossPct, dayChange, dayChangeAbs }
   }), [positions, prices])
 
+  // Sorted enriched positions
+  const sortedEnriched = useMemo(() => {
+    return [...enriched].sort((a, b) => {
+      let av = a[sortBy], bv = b[sortBy]
+      if (typeof av === 'string') av = av.toLowerCase()
+      if (typeof bv === 'string') bv = bv.toLowerCase()
+      if (av === undefined) av = 0
+      if (bv === undefined) bv = 0
+      return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1)
+    })
+  }, [enriched, sortBy, sortDir])
+
   const totals = useMemo(() => {
     const totalValue = enriched.reduce((s, p) => s + p.currentValue, 0)
     const totalCost = enriched.reduce((s, p) => s + p.costBasis, 0)
     const totalGL = totalValue - totalCost
     const totalGLPct = totalCost > 0 ? (totalGL / totalCost) * 100 : 0
-    return { totalValue, totalCost, totalGL, totalGLPct }
-  }, [enriched])
+    const cash = portfolio?.cash || 0
+    const totalWithCash = totalValue + cash
+    return { totalValue, totalCost, totalGL, totalGLPct, cash, totalWithCash }
+  }, [enriched, portfolio])
 
-    // Auto-save snapshot whenever prices refresh
   useEffect(() => {
     if (!tickers.length || !Object.keys(prices).length) return
     const totalValue = enriched.reduce((s, p) => s + p.currentValue, 0)
     if (totalValue > 0) saveSnapshot(id, user.uid, totalValue)
   }, [lastUpdated])
 
-  // Load historical for focused ticker
   useEffect(() => {
     const ticker = focusTicker || tickers[0]
     if (!ticker) return
     setLoadingHist(true)
     fetchHistoricalData(ticker, range).then(d => { setHistData(d); setLoadingHist(false) })
   }, [focusTicker, range, tickers.join(',')])
+
+  // Handle sort column click
+  const handleSort = (col) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('desc') }
+  }
+
+  // Cash management
+  const handleCashSave = async () => {
+    setSavingCash(true)
+    try {
+      let newCash = portfolio?.cash || 0
+      if (cashMode === 'set') newCash = parseFloat(cashInput) || 0
+      else if (cashMode === 'add') newCash = newCash + (parseFloat(cashInput) || 0)
+      else if (cashMode === 'sell') {
+        const proceeds = (parseFloat(sellForm.shares) || 0) * (parseFloat(sellForm.price) || 0)
+        newCash = newCash + proceeds
+      }
+      await updatePortfolioCash(id, newCash)
+      setShowCashEditor(false)
+      setCashInput('')
+      setSellForm({ ticker: '', shares: '', price: '' })
+    } finally {
+      setSavingCash(false)
+    }
+  }
+
+  // News panel
+  const openNews = async (ticker) => {
+    if (newsPanel === ticker) { setNewsPanel(null); return }
+    setNewsPanel(ticker)
+    setDescPanel(null)
+    setNewsLoading(true)
+    const data = await fetchTickerNews(ticker)
+    setNews(data)
+    setNewsLoading(false)
+  }
+
+  // Description panel
+  const openDesc = async (ticker) => {
+    if (descPanel === ticker) { setDescPanel(null); return }
+    setDescPanel(ticker)
+    setNewsPanel(null)
+    if (!profiles[ticker]) {
+      const profile = await fetchTickerProfile(ticker)
+      setProfiles(p => ({ ...p, [ticker]: profile }))
+    }
+    if (!aiDesc[ticker]) {
+      setDescLoading(true)
+      try {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: `Write a concise, investor-focused description of ${ticker} as a stock. Cover: what the company does, its main business segments, competitive position, key growth drivers, and main risks. Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
+            }]
+          })
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const text = data.content?.map(c => c.text || '').join('') || ''
+          setAiDesc(d => ({ ...d, [ticker]: text }))
+        } else {
+          setAiDesc(d => ({ ...d, [ticker]: `${ticker} is a publicly traded security. Add your Anthropic API key to enable AI-powered descriptions.` }))
+        }
+      } catch {
+        setAiDesc(d => ({ ...d, [ticker]: `Description unavailable. Check your API key configuration.` }))
+      } finally {
+        setDescLoading(false)
+      }
+    }
+  }
 
   const handleSaveSnapshot = async () => {
     await saveSnapshot(id, user.uid, totals.totalValue)
@@ -138,6 +281,7 @@ export default function PortfolioDetailPage() {
 
   const isUp = totals.totalGL >= 0
   const displayTicker = focusTicker || tickers[0]
+  const cash = portfolio?.cash || 0
 
   return (
     <>
@@ -156,6 +300,9 @@ export default function PortfolioDetailPage() {
           {lastUpdated && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Updated {lastUpdated.toLocaleTimeString()}</span>}
           <button className="btn btn-ghost" onClick={refresh} disabled={priceLoading}><RefreshCw size={13} /> Refresh</button>
           <button className="btn btn-ghost" onClick={handleSaveSnapshot} title="Save today's value as a snapshot">📸 Snapshot</button>
+          <button className="btn btn-ghost" onClick={() => { setShowCashEditor(true); setCashMode('set'); setCashInput(String(cash)) }} style={{ color: 'var(--green)', borderColor: 'rgba(0,200,150,0.3)' }}>
+            <Wallet size={13} /> Cash
+          </button>
           <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm({ ticker: '', shares: '', avgCost: '', notes: '' }); setShowAdd(true) }}>
             <Plus size={14} /> Add Position
           </button>
@@ -163,26 +310,38 @@ export default function PortfolioDetailPage() {
       </div>
 
       <div className="page-body">
-        {/* Totals */}
+        {/* Totals — now includes cash */}
         <div className="grid-4" style={{ marginBottom: '1.5rem' }}>
           {[
-            { label: 'Current Value', value: fmtUSD(totals.totalValue), color: 'accent' },
-            { label: 'Total Invested', value: fmtUSD(totals.totalCost), color: 'blue' },
+            { label: 'Invested Value', value: fmtUSD(totals.totalValue), color: 'accent' },
+            { label: 'Cash Balance', value: fmtUSD(cash), color: 'green', action: () => { setShowCashEditor(true); setCashMode('set'); setCashInput(String(cash)) } },
             { label: 'Total Return', value: fmtUSD(totals.totalGL), sub: fmtPct(totals.totalGLPct), color: isUp ? 'green' : 'red' },
             { label: 'Positions', value: positions.length, color: 'amber' }
           ].map((s, i) => (
-            <div key={i} className={`stat-card ${s.color}`}>
+            <div key={i} className={`stat-card ${s.color}`} onClick={s.action} style={{ cursor: s.action ? 'pointer' : 'default' }}>
               <div className="stat-label">{s.label}</div>
               <div className="stat-value" style={{ fontSize: '1.3rem' }}>{s.value}</div>
               {s.sub && <div className="stat-change" style={{ color: isUp ? 'var(--green)' : 'var(--red)' }}>{s.sub}</div>}
+              {i === 1 && <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>Click to update</div>}
             </div>
           ))}
         </div>
 
+        {/* Total Portfolio Value (equity + cash) */}
+        {cash > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem', padding: '0.75rem 1.25rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+            <DollarSign size={14} color="var(--accent)" />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Total Portfolio (equity + cash):</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1rem' }}>{fmtUSD(totals.totalWithCash)}</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+              {((totals.totalValue / totals.totalWithCash) * 100).toFixed(1)}% invested · {((cash / totals.totalWithCash) * 100).toFixed(1)}% cash
+            </span>
+          </div>
+        )}
+
         {/* Charts */}
         {tickers.length > 0 && (
           <div className="grid-2" style={{ marginBottom: '1.5rem' }}>
-            {/* Price chart */}
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div>
@@ -210,7 +369,6 @@ export default function PortfolioDetailPage() {
                   ))}
                 </div>
               </div>
-              {/* Ticker selector */}
               {tickers.length > 1 && (
                 <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                   {tickers.map(t => (
@@ -247,7 +405,6 @@ export default function PortfolioDetailPage() {
               )}
             </div>
 
-            {/* P&L by position */}
             <div className="card">
               <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>P&L by Position</div>
               <ResponsiveContainer width="100%" height={200}>
@@ -265,17 +422,14 @@ export default function PortfolioDetailPage() {
               </ResponsiveContainer>
             </div>
           </div>
-
         )}
 
         {/* Portfolio Value Over Time */}
         {snapshots.length >= 1 && (
-          <div className="card" style={{ marginTop: '0', marginBottom: '1.5rem' }}>
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <div>
-                <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                  Portfolio Value Over Time
-                </div>
+                <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Portfolio Value Over Time</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 700, marginTop: '0.2rem' }}>
                   {fmtUSD(snapshots[snapshots.length - 1]?.value)}
                   {snapshots.length > 1 && (() => {
@@ -303,22 +457,10 @@ export default function PortfolioDetailPage() {
                 <YAxis hide domain={['auto', 'auto']} />
                 <Tooltip
                   formatter={v => [fmtUSD(v), 'Portfolio Value']}
-                  contentStyle={{
-                    background: '#ffffff', border: '1px solid #e0e0e0',
-                    borderRadius: '6px', fontFamily: 'var(--font-mono)',
-                    color: '#111111', fontSize: '12px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                  }}
+                  contentStyle={{ background: '#ffffff', border: '1px solid #e0e0e0', borderRadius: '6px', fontFamily: 'var(--font-mono)', color: '#111111', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
                   itemStyle={{ color: '#111111' }}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke={portfolio?.color || 'var(--accent)'}
-                  strokeWidth={2}
-                  fill="url(#snapGrad)"
-                  dot={false}
-                />
+                <Area type="monotone" dataKey="value" stroke={portfolio?.color || 'var(--accent)'} strokeWidth={2} fill="url(#snapGrad)" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -328,31 +470,32 @@ export default function PortfolioDetailPage() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Positions</div>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{positions.length} total</span>
-          </div>
-          {enriched.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              No positions yet. Add your first position →
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)' }}>Sort by column header</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>{positions.length} total</span>
             </div>
+          </div>
+
+          {sortedEnriched.length === 0 ? (
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>No positions yet. Add your first position →</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Ticker</th>
-                    <th>Shares</th>
-                    <th>Avg Cost</th>
-                    <th>Current Price</th>
-                    <th>Market Value</th>
-                    <th>Cost Basis</th>
-                    <th>Gain / Loss</th>
-                    <th>Day Chg</th>
-                    <th>Return %</th>
-                    <th></th>
+                    {SORT_COLS.map(col => (
+                      <th key={col.key} onClick={() => handleSort(col.key)} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', color: sortBy === col.key ? 'var(--accent)' : undefined }}>
+                          {col.label}
+                          <SortIcon col={col.key} sortBy={sortBy} sortDir={sortDir} />
+                        </span>
+                      </th>
+                    ))}
+                    <th style={{ width: 100 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {enriched.map((pos, i) => (
+                  {sortedEnriched.map((pos, i) => (
                     <tr key={pos.id} style={{ animationDelay: `${i * 0.04}s` }}>
                       <td>
                         <div style={{ fontWeight: 700, fontFamily: 'var(--font-display)', letterSpacing: '0.03em' }}>{pos.ticker.toUpperCase()}</div>
@@ -379,7 +522,23 @@ export default function PortfolioDetailPage() {
                         </span>
                       </td>
                       <td>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', gap: '0.3rem' }}>
+                          <button
+                            className="btn btn-ghost"
+                            style={{ padding: '0.3rem 0.45rem' }}
+                            onClick={() => openDesc(pos.ticker.toUpperCase())}
+                            title="Company description"
+                          >
+                            <Info size={12} />
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            style={{ padding: '0.3rem 0.45rem' }}
+                            onClick={() => openNews(pos.ticker.toUpperCase())}
+                            title="Latest news"
+                          >
+                            <Newspaper size={12} />
+                          </button>
                           <button className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }} onClick={() => startEdit(pos)}><Edit2 size={12} /></button>
                           <button className="btn btn-danger" style={{ padding: '0.3rem 0.5rem' }} onClick={() => handleDelete(pos.id)}><Trash2 size={12} /></button>
                         </div>
@@ -391,9 +550,182 @@ export default function PortfolioDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Description panel */}
+        {descPanel && (
+          <div className="card" style={{ marginTop: '1rem', animation: 'fadeIn 0.25s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Info size={15} color="var(--blue)" />
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{descPanel}</span>
+                {profiles[descPanel] && (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    {profiles[descPanel].name} · {profiles[descPanel].sector || profiles[descPanel].type}
+                  </span>
+                )}
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setDescPanel(null)}><X size={14} /></button>
+            </div>
+            {descLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {[100, 85, 90, 70].map((w, i) => (
+                  <div key={i} style={{ height: 12, borderRadius: 4, background: 'var(--bg-elevated)', width: `${w}%`, animation: `pulse 1.5s ${i * 0.15}s infinite` }} />
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
+                {aiDesc[descPanel] || 'Loading description...'}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* News panel */}
+        {newsPanel && (
+          <div className="card" style={{ marginTop: '1rem', animation: 'fadeIn 0.25s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Newspaper size={15} color="var(--accent)" />
+                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Latest News · {newsPanel}</span>
+              </div>
+              <button className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setNewsPanel(null)}><X size={14} /></button>
+            </div>
+            {newsLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {[1,2,3].map(i => (
+                  <div key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                    <div style={{ width: 60, height: 40, borderRadius: 6, background: 'var(--bg-elevated)', flexShrink: 0, animation: 'pulse 1.5s infinite' }} />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <div style={{ height: 12, borderRadius: 4, background: 'var(--bg-elevated)', animation: 'pulse 1.5s infinite' }} />
+                      <div style={{ height: 10, borderRadius: 4, background: 'var(--bg-elevated)', width: '60%', animation: 'pulse 1.5s infinite' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : news.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '1.5rem' }}>No news found for {newsPanel}</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                {news.map((item, i) => (
+                  <a
+                    key={item.uuid || i}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', gap: '0.75rem', alignItems: 'flex-start',
+                      padding: '0.75rem 0',
+                      borderBottom: i < news.length - 1 ? '1px solid var(--border)' : 'none',
+                      textDecoration: 'none',
+                      transition: 'background 0.15s',
+                      borderRadius: 'var(--radius-sm)',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    {item.thumbnail && (
+                      <img src={item.thumbnail} alt="" style={{ width: 64, height: 42, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} onError={e => e.target.style.display = 'none'} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.4, marginBottom: '0.25rem', display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                        <span style={{ flex: 1 }}>{item.title}</span>
+                        <ExternalLink size={11} color="var(--text-dim)" style={{ flexShrink: 0, marginTop: 3 }} />
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {item.publisher} · {timeAgo(item.publishedAt)}
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* Cash Editor Modal */}
+      {showCashEditor && (
+        <div className="modal-overlay" onClick={() => setShowCashEditor(false)}>
+          <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Wallet size={18} color="var(--green)" /> Cash Balance
+              </div>
+              <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setShowCashEditor(false)}><X size={16} /></button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '1.25rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', padding: '3px' }}>
+              {[
+                { id: 'set', label: 'Set Balance' },
+                { id: 'add', label: 'Deposit/Withdraw' },
+                { id: 'sell', label: 'Record Sale' },
+              ].map(m => (
+                <button key={m.id} onClick={() => setCashMode(m.id)} style={{
+                  flex: 1, padding: '0.45rem 0.5rem', borderRadius: '3px', border: 'none',
+                  fontSize: '0.72rem', fontFamily: 'var(--font-mono)',
+                  background: cashMode === m.id ? 'var(--bg-surface)' : 'transparent',
+                  color: cashMode === m.id ? 'var(--accent)' : 'var(--text-muted)',
+                  cursor: 'pointer'
+                }}>{m.label}</button>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: '1rem', padding: '0.6rem 0.75rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              Current cash: <strong style={{ color: 'var(--green)' }}>{fmtUSD(cash)}</strong>
+            </div>
+
+            {cashMode === 'set' && (
+              <Field label="New Cash Balance">
+                <input type="number" step="0.01" value={cashInput} onChange={e => setCashInput(e.target.value)} placeholder="5000.00" autoFocus />
+              </Field>
+            )}
+
+            {cashMode === 'add' && (
+              <Field label="Amount (positive = deposit, negative = withdrawal)">
+                <input type="number" step="0.01" value={cashInput} onChange={e => setCashInput(e.target.value)} placeholder="1000.00 or -500.00" autoFocus />
+                {cashInput && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                    New balance: <strong style={{ color: 'var(--green)' }}>{fmtUSD(cash + (parseFloat(cashInput) || 0))}</strong>
+                  </div>
+                )}
+              </Field>
+            )}
+
+            {cashMode === 'sell' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Selling a position? Enter details and the proceeds will be added to cash automatically.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.6rem' }}>
+                  <Field label="Ticker">
+                    <input value={sellForm.ticker} onChange={e => setSellForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} placeholder="AAPL" />
+                  </Field>
+                  <Field label="Shares Sold">
+                    <input type="number" step="any" value={sellForm.shares} onChange={e => setSellForm(f => ({ ...f, shares: e.target.value }))} placeholder="10" />
+                  </Field>
+                  <Field label="Sell Price">
+                    <input type="number" step="any" value={sellForm.price} onChange={e => setSellForm(f => ({ ...f, price: e.target.value }))} placeholder="175.00" />
+                  </Field>
+                </div>
+                {sellForm.shares && sellForm.price && (
+                  <div style={{ padding: '0.6rem 0.75rem', background: 'var(--green-dim)', border: '1px solid rgba(0,200,150,0.2)', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--green)' }}>
+                    Proceeds: {fmtUSD(parseFloat(sellForm.shares) * parseFloat(sellForm.price))} → New cash: {fmtUSD(cash + parseFloat(sellForm.shares) * parseFloat(sellForm.price))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+              <button className="btn btn-ghost" onClick={() => setShowCashEditor(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleCashSave} disabled={savingCash} style={{ background: 'var(--green)', color: '#000' }}>
+                {savingCash ? 'Saving...' : <><Check size={13} /> Update Cash</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Edit Position Modal */}
       {showAdd && (
         <div className="modal-overlay" onClick={() => setShowAdd(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>

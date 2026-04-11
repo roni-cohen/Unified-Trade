@@ -1,6 +1,8 @@
 // src/lib/stockApi.js
 const CACHE = new Map()
 const CACHE_TTL = 60_000
+const NEWS_CACHE = new Map()
+const NEWS_TTL = 300_000 // 5 minutes
 
 function yahooUrl(ticker, interval, range) {
   return `/api/yahoo/v8/finance/chart/${ticker}?interval=${interval}&range=${range}`
@@ -46,9 +48,7 @@ export async function fetchPrices(tickers) {
   const results = await Promise.allSettled(tickers.map(fetchPrice))
   const map = {}
   results.forEach((r, i) => {
-    if (r.status === 'fulfilled' && r.value) {
-      map[tickers[i].toUpperCase()] = r.value
-    }
+    if (r.status === 'fulfilled' && r.value) map[tickers[i].toUpperCase()] = r.value
   })
   return map
 }
@@ -73,5 +73,49 @@ export async function fetchHistoricalData(ticker, range = '1y') {
   } catch (err) {
     console.warn(`Historical fetch failed for ${key}:`, err.message)
     return []
+  }
+}
+
+export async function fetchTickerNews(ticker) {
+  const key = ticker.toUpperCase()
+  const cached = NEWS_CACHE.get(key)
+  if (cached && Date.now() - cached.ts < NEWS_TTL) return cached.data
+
+  try {
+    const res = await fetch(`/api/yahoo/v1/finance/search?q=${key}&newsCount=6&quotesCount=0`)
+    const json = await res.json()
+    const news = (json?.news || []).map(item => ({
+      title: item.title,
+      url: item.link,
+      publisher: item.publisher,
+      publishedAt: item.providerPublishTime ? new Date(item.providerPublishTime * 1000) : null,
+      thumbnail: item.thumbnail?.resolutions?.[0]?.url || null,
+      uuid: item.uuid,
+    })).filter(n => n.title && n.url)
+
+    NEWS_CACHE.set(key, { data: news, ts: Date.now() })
+    return news
+  } catch (err) {
+    console.warn(`News fetch failed for ${key}:`, err.message)
+    return []
+  }
+}
+
+export async function fetchTickerProfile(ticker) {
+  const key = ticker.toUpperCase()
+  try {
+    const res = await fetch(`/api/yahoo/v1/finance/search?q=${key}&quotesCount=1&newsCount=0&enableFuzzyQuery=false`)
+    const json = await res.json()
+    const quote = json?.quotes?.[0]
+    if (!quote) return null
+    return {
+      name: quote.longname || quote.shortname || key,
+      exchange: quote.exchange,
+      type: quote.quoteType,
+      sector: quote.sector || null,
+      industry: quote.industry || null,
+    }
+  } catch (err) {
+    return null
   }
 }

@@ -1,11 +1,10 @@
 // src/lib/demoData.js
 // In-memory store used when Firebase is not configured (IS_DEMO === true).
-// All reads/writes work identically to the real db.js API — just stored in RAM.
 
 let _portfolios = [
-  { id: 'p1', name: 'Growth Fund',  description: 'Long-term compounders', broker: 'Fidelity',   color: '#00d4aa', userId: 'demo', createdAt: { seconds: 1700000000 } },
-  { id: 'p2', name: 'Tech Bets',    description: 'High-conviction tech',  broker: 'Robinhood',  color: '#3d8ef0', userId: 'demo', createdAt: { seconds: 1700000100 } },
-  { id: 'p3', name: 'Dividends',    description: 'Income-focused',        broker: 'IBKR',       color: '#f5a623', userId: 'demo', createdAt: { seconds: 1700000200 } },
+  { id: 'p1', name: 'Growth Fund',  description: 'Long-term compounders', broker: 'Fidelity',   color: '#00d4aa', userId: 'demo', createdAt: { seconds: 1700000000 }, cash: 5000 },
+  { id: 'p2', name: 'Tech Bets',    description: 'High-conviction tech',  broker: 'Robinhood',  color: '#3d8ef0', userId: 'demo', createdAt: { seconds: 1700000100 }, cash: 1200 },
+  { id: 'p3', name: 'Dividends',    description: 'Income-focused',        broker: 'IBKR',       color: '#f5a623', userId: 'demo', createdAt: { seconds: 1700000200 }, cash: 3400 },
 ]
 
 let _positions = [
@@ -21,14 +20,14 @@ let _positions = [
 ]
 
 let _journal = [
-  { id: 'j1', userId: 'demo', date: '2025-03-15', ticker: 'NVDA',  action: 'buy',  shares: 15, price: 420, mood: 'confident', strategy: 'Momentum',    outcome: 'win',  pnl: 6831,  notes: 'Breaking out of consolidation. Strong AI demand thesis.', tags: ['AI', 'breakout'], createdAt: { seconds: 1742000000 } },
-  { id: 'j2', userId: 'demo', date: '2025-03-08', ticker: 'INTC',  action: 'buy',  shares: 30, price: 38,  mood: 'cautious',  strategy: 'Value',        outcome: 'loss', pnl: -196,  notes: 'Bought the dip. Thesis: fab recovery. Not playing out.', tags: ['value', 'turnaround'], createdAt: { seconds: 1741400000 } },
-  { id: 'j3', userId: 'demo', date: '2025-02-22', ticker: 'MSFT',  action: 'buy',  shares: 10, price: 280, mood: 'neutral',   strategy: 'Value',        outcome: 'win',  pnl: 1352,  notes: 'Cloud growth re-accelerating. Copilot adoption.', tags: ['cloud', 'AI'], createdAt: { seconds: 1740800000 } },
-  { id: 'j4', userId: 'demo', date: '2025-02-10', ticker: 'SPY',   action: 'buy',  shares: 5,  price: 420, mood: 'neutral',   strategy: 'Buy & Hold',   outcome: 'open', pnl: null,  notes: 'Regular DCA into index.', tags: ['DCA'], createdAt: { seconds: 1740200000 } },
-  { id: 'j5', userId: 'demo', date: '2025-01-18', ticker: 'META',  action: 'buy',  shares: 8,  price: 310, mood: 'confident', strategy: 'Momentum',    outcome: 'win',  pnl: 920,   notes: 'Reels growing. Ad revenue recovery strong.', tags: ['social', 'ads'], createdAt: { seconds: 1737200000 } },
-  { id: 'j6', userId: 'demo', date: '2024-12-05', ticker: 'PARA',  action: 'buy',  shares: 50, price: 14,  mood: 'greedy',    strategy: 'Value',        outcome: 'loss', pnl: -110,  notes: 'Streaming pivot. Probably a mistake.', tags: ['media'], createdAt: { seconds: 1733400000 } },
-  { id: 'j7', userId: 'demo', date: '2024-11-20', ticker: 'AAPL',  action: 'buy',  shares: 20, price: 145, mood: 'neutral',   strategy: 'Buy & Hold',  outcome: 'win',  pnl: 886,   notes: 'Services segment growing. iPhone cycle.', tags: ['core'], createdAt: { seconds: 1732100000 } },
-  { id: 'j8', userId: 'demo', date: '2024-10-10', ticker: 'GOOGL', action: 'buy',  shares: 12, price: 130, mood: 'confident', strategy: 'Value',        outcome: 'win',  pnl: 780,   notes: 'Cheap relative to growth. Cloud catching up.', tags: ['cloud', 'value'], createdAt: { seconds: 1728600000 } },
+  { id: 'j1', userId: 'demo', date: '2025-03-15', ticker: 'NVDA',  action: 'buy',  shares: 15, price: 420, mood: 'confident', strategy: 'Momentum',   outcome: 'win',  pnl: 6831,  notes: 'Breaking out of consolidation. Strong AI demand thesis.', tags: ['AI', 'breakout'], createdAt: { seconds: 1742000000 } },
+  { id: 'j2', userId: 'demo', date: '2025-03-08', ticker: 'INTC',  action: 'buy',  shares: 30, price: 38,  mood: 'cautious',  strategy: 'Value',       outcome: 'loss', pnl: -196,  notes: 'Bought the dip. Thesis: fab recovery. Not playing out.', tags: ['value', 'turnaround'], createdAt: { seconds: 1741400000 } },
+  { id: 'j3', userId: 'demo', date: '2025-02-22', ticker: 'MSFT',  action: 'buy',  shares: 10, price: 280, mood: 'neutral',   strategy: 'Value',       outcome: 'win',  pnl: 1352,  notes: 'Cloud growth re-accelerating. Copilot adoption.', tags: ['cloud', 'AI'], createdAt: { seconds: 1740800000 } },
+  { id: 'j4', userId: 'demo', date: '2025-02-10', ticker: 'SPY',   action: 'buy',  shares: 5,  price: 420, mood: 'neutral',   strategy: 'Buy & Hold',  outcome: 'open', pnl: null,  notes: 'Regular DCA into index.', tags: ['DCA'], createdAt: { seconds: 1740200000 } },
+  { id: 'j5', userId: 'demo', date: '2025-01-18', ticker: 'META',  action: 'buy',  shares: 8,  price: 310, mood: 'confident', strategy: 'Momentum',   outcome: 'win',  pnl: 920,   notes: 'Reels growing. Ad revenue recovery strong.', tags: ['social', 'ads'], createdAt: { seconds: 1737200000 } },
+  { id: 'j6', userId: 'demo', date: '2024-12-05', ticker: 'PARA',  action: 'buy',  shares: 50, price: 14,  mood: 'greedy',    strategy: 'Value',       outcome: 'loss', pnl: -110,  notes: 'Streaming pivot. Probably a mistake.', tags: ['media'], createdAt: { seconds: 1733400000 } },
+  { id: 'j7', userId: 'demo', date: '2024-11-20', ticker: 'AAPL',  action: 'buy',  shares: 20, price: 145, mood: 'neutral',   strategy: 'Buy & Hold', outcome: 'win',  pnl: 886,   notes: 'Services segment growing. iPhone cycle.', tags: ['core'], createdAt: { seconds: 1732100000 } },
+  { id: 'j8', userId: 'demo', date: '2024-10-10', ticker: 'GOOGL', action: 'buy',  shares: 12, price: 130, mood: 'confident', strategy: 'Value',       outcome: 'win',  pnl: 780,   notes: 'Cheap relative to growth. Cloud catching up.', tags: ['cloud', 'value'], createdAt: { seconds: 1728600000 } },
 ]
 
 let _snapshots = []
@@ -36,16 +35,12 @@ let _idCounter = 100
 
 function uid() { return 'demo_' + (++_idCounter) }
 
-// Simulate Firestore real-time listeners with a simple pub/sub
 const _listeners = { portfolios: [], positions: {}, journal: [] }
 
-function notifyPortfolios() {
-  _listeners.portfolios.forEach(fn => fn([..._portfolios]))
-}
+function notifyPortfolios() { _listeners.portfolios.forEach(fn => fn([..._portfolios])) }
 function notifyPositions(portfolioId) {
   const fns = _listeners.positions[portfolioId] || []
-  const filtered = _positions.filter(p => p.portfolioId === portfolioId)
-  fns.forEach(fn => fn([...filtered]))
+  fns.forEach(fn => fn(_positions.filter(p => p.portfolioId === portfolioId).map(p => ({...p}))))
 }
 function notifyJournal() {
   const sorted = [..._journal].sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
@@ -56,16 +51,13 @@ function notifyJournal() {
 
 export function subscribePortfolios(userId, callback) {
   _listeners.portfolios.push(callback)
-  // Fire immediately
   setTimeout(() => callback([..._portfolios]), 0)
-  return () => {
-    _listeners.portfolios = _listeners.portfolios.filter(fn => fn !== callback)
-  }
+  return () => { _listeners.portfolios = _listeners.portfolios.filter(fn => fn !== callback) }
 }
 
 export async function createPortfolio(userId, data) {
   const id = uid()
-  _portfolios.push({ id, userId, createdAt: { seconds: Date.now() / 1000 }, ...data })
+  _portfolios.push({ id, userId, createdAt: { seconds: Date.now() / 1000 }, cash: 0, ...data })
   notifyPortfolios()
   return { id }
 }
@@ -82,6 +74,11 @@ export async function deletePortfolio(id) {
   Object.keys(_listeners.positions).forEach(pid => notifyPositions(pid))
 }
 
+export async function updatePortfolioCash(portfolioId, cash) {
+  _portfolios = _portfolios.map(p => p.id === portfolioId ? { ...p, cash: parseFloat(cash) || 0 } : p)
+  notifyPortfolios()
+}
+
 // ── POSITIONS ────────────────────────────────────────────────────────────────
 
 export function subscribePositions(portfolioId, callback) {
@@ -89,21 +86,14 @@ export function subscribePositions(portfolioId, callback) {
   _listeners.positions[portfolioId].push(callback)
   setTimeout(() => callback(_positions.filter(p => p.portfolioId === portfolioId)), 0)
   return () => {
-    if (_listeners.positions[portfolioId]) {
+    if (_listeners.positions[portfolioId])
       _listeners.positions[portfolioId] = _listeners.positions[portfolioId].filter(fn => fn !== callback)
-    }
   }
 }
 
 export async function addPosition(portfolioId, userId, data) {
   const id = uid()
-  _positions.push({
-    id, portfolioId, userId,
-    ...data,
-    shares: parseFloat(data.shares),
-    avgCost: parseFloat(data.avgCost),
-    addedAt: { seconds: Date.now() / 1000 }
-  })
+  _positions.push({ id, portfolioId, userId, ...data, shares: parseFloat(data.shares), avgCost: parseFloat(data.avgCost), addedAt: { seconds: Date.now() / 1000 } })
   notifyPositions(portfolioId)
   return { id }
 }
@@ -126,9 +116,7 @@ export function subscribeJournal(userId, callback) {
   _listeners.journal.push(callback)
   const sorted = [..._journal].sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
   setTimeout(() => callback(sorted), 0)
-  return () => {
-    _listeners.journal = _listeners.journal.filter(fn => fn !== callback)
-  }
+  return () => { _listeners.journal = _listeners.journal.filter(fn => fn !== callback) }
 }
 
 export async function addJournalEntry(userId, data) {
