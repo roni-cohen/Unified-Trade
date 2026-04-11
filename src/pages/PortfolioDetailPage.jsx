@@ -207,13 +207,22 @@ export default function PortfolioDetailPage() {
     if (descPanel === ticker) { setDescPanel(null); return }
     setDescPanel(ticker)
     setNewsPanel(null)
-    if (!profiles[ticker]) {
-      const profile = await fetchTickerProfile(ticker)
+
+    // Always fetch profile first so we know the quoteType before building the prompt
+    let profile = profiles[ticker]
+    if (!profile) {
+      profile = await fetchTickerProfile(ticker)
       setProfiles(p => ({ ...p, [ticker]: profile }))
     }
+
     if (!aiDesc[ticker]) {
       setDescLoading(true)
       try {
+        const isETF = profile?.type === 'ETF' || profile?.type === 'MUTUALFUND'
+        const prompt = isETF
+          ? `Write a concise, investor-focused description of ${ticker} as an ETF or fund. Cover: what index or strategy it tracks, its asset class and geographic focus, approximate expense ratio if known, top holdings or sector weights, who it is suitable for, and any key risks (e.g. concentration, liquidity, tracking error). Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
+          : `Write a concise, investor-focused description of ${ticker} as a stock. Cover: what the company does, its main business segments, competitive position, key growth drivers, and main risks. Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
+
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -225,10 +234,7 @@ export default function PortfolioDetailPage() {
           body: JSON.stringify({
             model: 'claude-sonnet-4-20250514',
             max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: `Write a concise, investor-focused description of ${ticker} as a stock. Cover: what the company does, its main business segments, competitive position, key growth drivers, and main risks. Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
-            }]
+            messages: [{ role: 'user', content: prompt }]
           })
         })
         if (res.ok) {
@@ -560,7 +566,13 @@ export default function PortfolioDetailPage() {
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{descPanel}</span>
                 {profiles[descPanel] && (
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    {profiles[descPanel].name} · {profiles[descPanel].sector || profiles[descPanel].type}
+                    {profiles[descPanel].name}
+                    {profiles[descPanel].type && (
+                      <span className={`tag ${profiles[descPanel].type === 'ETF' || profiles[descPanel].type === 'MUTUALFUND' ? 'tag-blue' : 'tag-accent'}`} style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>
+                        {profiles[descPanel].type === 'MUTUALFUND' ? 'Fund' : profiles[descPanel].type}
+                      </span>
+                    )}
+                    {profiles[descPanel].sector && <span style={{ marginLeft: '0.35rem' }}>· {profiles[descPanel].sector}</span>}
                   </span>
                 )}
               </div>
