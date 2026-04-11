@@ -17,9 +17,9 @@ async function fetchYahoo(ticker, interval, range) {
       throw new Error(`HTTP error! status: ${res.status} or not JSON`);
     }
     return await res.json();
-  } catch (e) {
+  } catch (error) {
     // This matches your existing error handling pattern
-    return console.warn(`Failed to fetch ${e}:`, a.message), null;
+    return console.warn(`Failed to fetch ${e}:`, error.message), null;
   }
 }
 
