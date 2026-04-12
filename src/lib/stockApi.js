@@ -123,49 +123,49 @@ export async function fetchTickerProfile(ticker) {
 export async function fetchTickerDescription(ticker) {
   const key = ticker.toUpperCase()
   try {
-    const res = await fetch(`/api/yahoo/v10/finance/quoteSummary/${key}?modules=assetProfile,summaryProfile,fundProfile`)
-    const json = await res.json()
-    const result = json?.quoteSummary?.result?.[0]
+    // Step 1: metadata from v7/quote — works without auth
+    const quoteRes = await fetch(`/api/yahoo/v7/finance/quote?symbols=${key}&fields=longName,shortName,sector,industry,country,fullTimeEmployees,website,quoteType`)
+    const quoteJson = await quoteRes.json()
+    const q = quoteJson?.quoteResponse?.result?.[0]
 
-    // Stocks with assetProfile
-    const asset = result?.assetProfile
-    if (asset?.longBusinessSummary) {
-      return {
-        description: asset.longBusinessSummary,
-        sector: asset.sector || null,
-        industry: asset.industry || null,
-        website: asset.website || null,
-        employees: asset.fullTimeEmployees || null,
-        country: asset.country || null,
+    const meta = {
+      sector:    q?.sector || null,
+      industry:  q?.industry || null,
+      country:   q?.country || null,
+      employees: q?.fullTimeEmployees || null,
+      website:   q?.website || null,
+      type:      q?.quoteType || null,
+    }
+
+    // Step 2: description from Wikipedia — free, no auth, great for stocks & ETFs
+    const searchName = q?.longName || q?.shortName || key
+    const wikiQuery = searchName
+      .replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC|PLC|ETF|Fund|Trust|N\.?V\.?)$/i, '')
+      .trim()
+
+    const wikiRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiQuery)}`
+    )
+    if (wikiRes.ok) {
+      const wiki = await wikiRes.json()
+      if (wiki.extract && wiki.type !== 'disambiguation') {
+        return { ...meta, description: wiki.extract, wikiUrl: wiki.content_urls?.desktop?.page || null }
       }
     }
 
-    // ETFs / mutual funds with fundProfile
-    const fund = result?.fundProfile
-    if (fund?.longBusinessSummary) {
-      return {
-        description: fund.longBusinessSummary,
-        sector: null,
-        industry: fund.categoryName || null,
-        website: null,
-        employees: null,
-        country: null,
+    // Fallback: try ticker symbol directly
+    const wikiTickerRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(key)}`
+    )
+    if (wikiTickerRes.ok) {
+      const wiki = await wikiTickerRes.json()
+      if (wiki.extract && wiki.type !== 'disambiguation') {
+        return { ...meta, description: wiki.extract, wikiUrl: wiki.content_urls?.desktop?.page || null }
       }
     }
 
-    // summaryProfile fallback
-    const summary = result?.summaryProfile
-    if (summary?.longBusinessSummary) {
-      return {
-        description: summary.longBusinessSummary,
-        sector: summary.sector || null,
-        industry: summary.industry || null,
-        website: summary.website || null,
-        employees: null,
-        country: summary.country || null,
-      }
-    }
-
+    // Return metadata only if Wikipedia has nothing
+    if (q) return { ...meta, description: null, wikiUrl: null }
     return null
   } catch (err) {
     console.warn(`Description fetch failed for ${key}:`, err.message)

@@ -573,6 +573,11 @@ export default function PortfolioDetailPage() {
                         <ExternalLink size={10} /> {aiDesc[descPanel].website.replace(/^https?:\/\//, '')}
                       </a>
                     )}
+                    {aiDesc[descPanel].wikiUrl && (
+                      <a href={aiDesc[descPanel].wikiUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', color: 'var(--text-muted)', textDecoration: 'none' }}>
+                        <ExternalLink size={10} /> Wikipedia
+                      </a>
+                    )}
                   </div>
                 )}
                 <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
