@@ -119,3 +119,56 @@ export async function fetchTickerProfile(ticker) {
     return null
   }
 }
+
+export async function fetchTickerDescription(ticker) {
+  const key = ticker.toUpperCase()
+  try {
+    const res = await fetch(`/api/yahoo/v10/finance/quoteSummary/${key}?modules=assetProfile,summaryProfile,fundProfile`)
+    const json = await res.json()
+    const result = json?.quoteSummary?.result?.[0]
+
+    // Stocks with assetProfile
+    const asset = result?.assetProfile
+    if (asset?.longBusinessSummary) {
+      return {
+        description: asset.longBusinessSummary,
+        sector: asset.sector || null,
+        industry: asset.industry || null,
+        website: asset.website || null,
+        employees: asset.fullTimeEmployees || null,
+        country: asset.country || null,
+      }
+    }
+
+    // ETFs / mutual funds with fundProfile
+    const fund = result?.fundProfile
+    if (fund?.longBusinessSummary) {
+      return {
+        description: fund.longBusinessSummary,
+        sector: null,
+        industry: fund.categoryName || null,
+        website: null,
+        employees: null,
+        country: null,
+      }
+    }
+
+    // summaryProfile fallback
+    const summary = result?.summaryProfile
+    if (summary?.longBusinessSummary) {
+      return {
+        description: summary.longBusinessSummary,
+        sector: summary.sector || null,
+        industry: summary.industry || null,
+        website: summary.website || null,
+        employees: null,
+        country: summary.country || null,
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.warn(`Description fetch failed for ${key}:`, err.message)
+    return null
+  }
+}

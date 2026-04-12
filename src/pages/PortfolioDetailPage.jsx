@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot, updatePortfolioCash } from '../lib/db'
 import { useLivePrices } from '../hooks/useLivePrices'
-import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile } from '../lib/stockApi'
+import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile, fetchTickerDescription } from '../lib/stockApi'
 import { usePortfolios } from '../hooks/usePortfolios'
 import { getSnapshots } from '../lib/db'
 import {
@@ -93,7 +93,7 @@ export default function PortfolioDetailPage() {
   // Descriptions panel
   const [descPanel, setDescPanel] = useState(null) // ticker or null
   const [profiles, setProfiles] = useState({}) // ticker -> profile
-  const [aiDesc, setAiDesc] = useState({}) // ticker -> text
+  const [aiDesc, setAiDesc] = useState({}) // ticker -> { description, sector, industry, ... }
   const [descLoading, setDescLoading] = useState(false)
 
   useEffect(() => {
@@ -208,44 +208,20 @@ export default function PortfolioDetailPage() {
     setDescPanel(ticker)
     setNewsPanel(null)
 
-    // Always fetch profile first so we know the quoteType before building the prompt
-    let profile = profiles[ticker]
-    if (!profile) {
-      profile = await fetchTickerProfile(ticker)
-      setProfiles(p => ({ ...p, [ticker]: profile }))
-    }
+    const needsProfile = !profiles[ticker]
+    const needsDesc = !aiDesc[ticker]
 
-    if (!aiDesc[ticker]) {
+    if (needsProfile || needsDesc) {
       setDescLoading(true)
       try {
-        const isETF = profile?.type === 'ETF' || profile?.type === 'MUTUALFUND'
-        const prompt = isETF
-          ? `Write a concise, investor-focused description of ${ticker} as an ETF or fund. Cover: what index or strategy it tracks, its asset class and geographic focus, approximate expense ratio if known, top holdings or sector weights, who it is suitable for, and any key risks (e.g. concentration, liquidity, tracking error). Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
-          : `Write a concise, investor-focused description of ${ticker} as a stock. Cover: what the company does, its main business segments, competitive position, key growth drivers, and main risks. Use 3-4 short paragraphs. Be direct and factual — this is for an investor's portfolio dashboard.`
-
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            messages: [{ role: 'user', content: prompt }]
-          })
-        })
-        if (res.ok) {
-          const data = await res.json()
-          const text = data.content?.map(c => c.text || '').join('') || ''
-          setAiDesc(d => ({ ...d, [ticker]: text }))
-        } else {
-          setAiDesc(d => ({ ...d, [ticker]: `${ticker} is a publicly traded security. Add your Anthropic API key to enable AI-powered descriptions.` }))
-        }
+        const [profile, descData] = await Promise.all([
+          needsProfile ? fetchTickerProfile(ticker) : Promise.resolve(profiles[ticker]),
+          needsDesc    ? fetchTickerDescription(ticker) : Promise.resolve(aiDesc[ticker]),
+        ])
+        if (needsProfile) setProfiles(p => ({ ...p, [ticker]: profile }))
+        if (needsDesc)    setAiDesc(d => ({ ...d, [ticker]: descData }))
       } catch {
-        setAiDesc(d => ({ ...d, [ticker]: `Description unavailable. Check your API key configuration.` }))
+        setAiDesc(d => ({ ...d, [ticker]: null }))
       } finally {
         setDescLoading(false)
       }
@@ -584,9 +560,28 @@ export default function PortfolioDetailPage() {
                   <div key={i} style={{ height: 12, borderRadius: 4, background: 'var(--bg-elevated)', width: `${w}%`, animation: `pulse 1.5s ${i * 0.15}s infinite` }} />
                 ))}
               </div>
+            ) : aiDesc[descPanel] ? (
+              <div>
+                {(aiDesc[descPanel].sector || aiDesc[descPanel].industry || aiDesc[descPanel].country || aiDesc[descPanel].employees || aiDesc[descPanel].website) && (
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
+                    {aiDesc[descPanel].sector   && <span className="tag tag-blue">{aiDesc[descPanel].sector}</span>}
+                    {aiDesc[descPanel].industry && <span className="tag tag-accent">{aiDesc[descPanel].industry}</span>}
+                    {aiDesc[descPanel].country  && <span className="tag" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{aiDesc[descPanel].country}</span>}
+                    {aiDesc[descPanel].employees && <span className="tag" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{aiDesc[descPanel].employees.toLocaleString()} employees</span>}
+                    {aiDesc[descPanel].website  && (
+                      <a href={aiDesc[descPanel].website} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', color: 'var(--accent)', textDecoration: 'none' }}>
+                        <ExternalLink size={10} /> {aiDesc[descPanel].website.replace(/^https?:\/\//, '')}
+                      </a>
+                    )}
+                  </div>
+                )}
+                <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
+                  {aiDesc[descPanel].description}
+                </div>
+              </div>
             ) : (
-              <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap' }}>
-                {aiDesc[descPanel] || 'Loading description...'}
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1.5rem' }}>
+                No description available for {descPanel}
               </div>
             )}
           </div>
