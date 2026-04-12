@@ -540,15 +540,9 @@ export default function PortfolioDetailPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <Info size={15} color="var(--blue)" />
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{descPanel}</span>
-                {profiles[descPanel] && (
+                {(profiles[descPanel] || aiDesc[descPanel]) && (
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    {profiles[descPanel].name}
-                    {profiles[descPanel].type && (
-                      <span className={`tag ${profiles[descPanel].type === 'ETF' || profiles[descPanel].type === 'MUTUALFUND' ? 'tag-blue' : 'tag-accent'}`} style={{ marginLeft: '0.4rem', fontSize: '0.62rem' }}>
-                        {profiles[descPanel].type === 'MUTUALFUND' ? 'Fund' : profiles[descPanel].type}
-                      </span>
-                    )}
-                    {profiles[descPanel].sector && <span style={{ marginLeft: '0.35rem' }}>· {profiles[descPanel].sector}</span>}
+                    {aiDesc[descPanel]?.name || profiles[descPanel]?.name || ''}
                   </span>
                 )}
               </div>
@@ -562,26 +556,33 @@ export default function PortfolioDetailPage() {
               </div>
             ) : aiDesc[descPanel] ? (
               <div>
-                {(aiDesc[descPanel].sector || aiDesc[descPanel].industry || aiDesc[descPanel].country || aiDesc[descPanel].employees || aiDesc[descPanel].website) && (
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.85rem' }}>
-                    {aiDesc[descPanel].sector   && <span className="tag tag-blue">{aiDesc[descPanel].sector}</span>}
-                    {aiDesc[descPanel].industry && <span className="tag tag-accent">{aiDesc[descPanel].industry}</span>}
-                    {aiDesc[descPanel].country  && <span className="tag" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{aiDesc[descPanel].country}</span>}
-                    {aiDesc[descPanel].employees && <span className="tag" style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>{aiDesc[descPanel].employees.toLocaleString()} employees</span>}
-                    {aiDesc[descPanel].website  && (
-                      <a href={aiDesc[descPanel].website} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', color: 'var(--accent)', textDecoration: 'none' }}>
-                        <ExternalLink size={10} /> {aiDesc[descPanel].website.replace(/^https?:\/\//, '')}
-                      </a>
-                    )}
-                    {aiDesc[descPanel].wikiUrl && (
-                      <a href={aiDesc[descPanel].wikiUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', color: 'var(--text-muted)', textDecoration: 'none' }}>
-                        <ExternalLink size={10} /> Wikipedia
-                      </a>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
+                  {aiDesc[descPanel].thumbnail && (
+                    <img src={aiDesc[descPanel].thumbnail} alt={descPanel} style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, flexShrink: 0, border: '1px solid var(--border)' }} onError={e => e.target.style.display='none'} />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.6rem', alignItems: 'center' }}>
+                      {aiDesc[descPanel].type && (
+                        <span className={`tag ${aiDesc[descPanel].type === 'ETF' || aiDesc[descPanel].type === 'MUTUALFUND' ? 'tag-blue' : 'tag-accent'}`}>
+                          {aiDesc[descPanel].type === 'MUTUALFUND' ? 'Fund' : aiDesc[descPanel].type}
+                        </span>
+                      )}
+                      {aiDesc[descPanel].wikiUrl && (
+                        <a href={aiDesc[descPanel].wikiUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem', color: 'var(--text-muted)', textDecoration: 'none' }}>
+                          <ExternalLink size={10} /> Wikipedia
+                        </a>
+                      )}
+                    </div>
+                    {aiDesc[descPanel].description ? (
+                      <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
+                        {aiDesc[descPanel].description}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        No description found for {descPanel}. Try searching on <a href={`https://en.wikipedia.org/wiki/${descPanel}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>Wikipedia</a>.
+                      </div>
                     )}
                   </div>
-                )}
-                <div style={{ fontSize: '0.83rem', lineHeight: 1.8, color: 'var(--text-secondary)' }}>
-                  {aiDesc[descPanel].description}
                 </div>
               </div>
             ) : (

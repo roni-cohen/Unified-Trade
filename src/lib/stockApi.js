@@ -123,49 +123,39 @@ export async function fetchTickerProfile(ticker) {
 export async function fetchTickerDescription(ticker) {
   const key = ticker.toUpperCase()
   try {
-    // Step 1: metadata from v7/quote — works without auth
-    const quoteRes = await fetch(`/api/yahoo/v7/finance/quote?symbols=${key}&fields=longName,shortName,sector,industry,country,fullTimeEmployees,website,quoteType`)
-    const quoteJson = await quoteRes.json()
-    const q = quoteJson?.quoteResponse?.result?.[0]
+    // Use the search endpoint (already works) just to get the full name
+    const searchRes = await fetch(`/api/yahoo/v1/finance/search?q=${key}&quotesCount=1&newsCount=0`)
+    const searchJson = await searchRes.json()
+    const q = searchJson?.quotes?.[0]
+    const fullName = q?.longname || q?.shortname || key
+    const quoteType = q?.quoteType || null
 
-    const meta = {
-      sector:    q?.sector || null,
-      industry:  q?.industry || null,
-      country:   q?.country || null,
-      employees: q?.fullTimeEmployees || null,
-      website:   q?.website || null,
-      type:      q?.quoteType || null,
-    }
-
-    // Step 2: description from Wikipedia — free, no auth, great for stocks & ETFs
-    const searchName = q?.longName || q?.shortName || key
-    const wikiQuery = searchName
-      .replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC|PLC|ETF|Fund|Trust|N\.?V\.?)$/i, '')
+    // Strip legal suffixes for a cleaner Wikipedia match
+    const wikiQuery = fullName
+      .replace(/\s+(Inc\.?|Corp\.?|Ltd\.?|LLC|PLC|ETF|Fund|Trust|N\.?V\.?|S\.?A\.?)$/i, '')
       .trim()
 
-    const wikiRes = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiQuery)}`
-    )
-    if (wikiRes.ok) {
-      const wiki = await wikiRes.json()
-      if (wiki.extract && wiki.type !== 'disambiguation') {
-        return { ...meta, description: wiki.extract, wikiUrl: wiki.content_urls?.desktop?.page || null }
+    // Try full name first, then ticker symbol as fallback
+    for (const query of [wikiQuery, key]) {
+      const res = await fetch(
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`
+      )
+      if (res.ok) {
+        const wiki = await res.json()
+        if (wiki.extract && wiki.type !== 'disambiguation') {
+          return {
+            description: wiki.extract,
+            wikiUrl: wiki.content_urls?.desktop?.page || null,
+            thumbnail: wiki.thumbnail?.source || null,
+            name: fullName,
+            type: quoteType,
+          }
+        }
       }
     }
 
-    // Fallback: try ticker symbol directly
-    const wikiTickerRes = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(key)}`
-    )
-    if (wikiTickerRes.ok) {
-      const wiki = await wikiTickerRes.json()
-      if (wiki.extract && wiki.type !== 'disambiguation') {
-        return { ...meta, description: wiki.extract, wikiUrl: wiki.content_urls?.desktop?.page || null }
-      }
-    }
-
-    // Return metadata only if Wikipedia has nothing
-    if (q) return { ...meta, description: null, wikiUrl: null }
+    // Wikipedia found nothing — return name/type only
+    if (q) return { description: null, wikiUrl: null, thumbnail: null, name: fullName, type: quoteType }
     return null
   } catch (err) {
     console.warn(`Description fetch failed for ${key}:`, err.message)
