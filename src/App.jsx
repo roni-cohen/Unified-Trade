@@ -8,6 +8,7 @@ import PortfoliosPage from './pages/PortfoliosPage'
 import PortfolioDetailPage from './pages/PortfolioDetailPage'
 import JournalPage from './pages/JournalPage'
 import InsightsPage from './pages/InsightsPage'
+import RulesPage from './pages/RulesPage'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
         <Route path="journal" element={<JournalPage />} />
         <Route path="insights" element={<InsightsPage />} />
+        <Route path="rules" element={<RulesPage />} />
       </Route>
     </Routes>
   )
