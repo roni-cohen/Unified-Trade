@@ -37,6 +37,12 @@ function timeAgo(date) {
 
 const RANGES = ['1w', '1m', '3m', '6m', '1y']
 
+const SECTORS = [
+  'Technology', 'Healthcare', 'Financials', 'Consumer Discretionary',
+  'Consumer Staples', 'Industrials', 'Energy', 'Materials',
+  'Real Estate', 'Utilities', 'Communication Services', 'ETF/Blend',
+]
+
 // Sortable columns config
 const SORT_COLS = [
   { key: 'ticker',       label: 'Ticker' },
@@ -65,7 +71,7 @@ export default function PortfolioDetailPage() {
   const [positions, setPositions] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ ticker: '', shares: '', avgCost: '', notes: '' })
+  const [form, setForm] = useState({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' })
   const [saving, setSaving] = useState(false)
 
   const [histData, setHistData] = useState([])
@@ -243,7 +249,7 @@ export default function PortfolioDetailPage() {
       } else {
         await addPosition(id, user.uid, form)
       }
-      setForm({ ticker: '', shares: '', avgCost: '', notes: '' })
+      setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' })
       setShowAdd(false)
     } finally {
       setSaving(false)
@@ -252,7 +258,7 @@ export default function PortfolioDetailPage() {
 
   const startEdit = (pos) => {
     setEditingId(pos.id)
-    setForm({ ticker: pos.ticker, shares: String(pos.shares), avgCost: String(pos.avgCost), notes: pos.notes || '' })
+    setForm({ ticker: pos.ticker, shares: String(pos.shares), avgCost: String(pos.avgCost), notes: pos.notes || '', sector: pos.sector || '' })
     setShowAdd(true)
   }
 
@@ -285,7 +291,7 @@ export default function PortfolioDetailPage() {
           <button className="btn btn-ghost" onClick={() => { setShowCashEditor(true); setCashMode('set'); setCashInput(String(cash)) }} style={{ color: 'var(--green)', borderColor: 'rgba(0,200,150,0.3)' }}>
             <Wallet size={13} /> Cash
           </button>
-          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm({ ticker: '', shares: '', avgCost: '', notes: '' }); setShowAdd(true) }}>
+          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' }); setShowAdd(true) }}>
             <Plus size={14} /> Add Position
           </button>
         </div>
@@ -762,6 +768,12 @@ export default function PortfolioDetailPage() {
               </div>
               <Field label="Notes">
                 <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="e.g. Long-term hold, earnings play..." />
+              </Field>
+              <Field label="Sector">
+                <select value={form.sector} onChange={e => setForm(f => ({ ...f, sector: e.target.value }))}>
+                  <option value="">— Select sector —</option>
+                  {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </Field>
               <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
