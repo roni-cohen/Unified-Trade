@@ -250,17 +250,21 @@ function buildIndividualCats(pos, total) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function RulesPage() {
-  const { portfolios } = usePortfolios()
+  const { portfolios, loading: portLoading } = usePortfolios()
   const [allPositions, setAllPositions] = useState([])
   const [view, setView] = useState('portfolio')
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [ran, setRan] = useState(false)
+  const [positionsLoaded, setPositionsLoaded] = useState(false)
 
   useEffect(() => {
-    if (!portfolios.length) return
+    if (!portfolios.length) { setPositionsLoaded(true); return }
     const byPort = {}
+    let resolved = 0
     const unsubs = portfolios.map(p => subscribePositions(p.id, positions => {
       byPort[p.id] = positions
+      resolved++
+      if (resolved >= portfolios.length) setPositionsLoaded(true)
       setAllPositions(Object.values(byPort).flat())
     }))
     return () => unsubs.forEach(u => u())
@@ -336,9 +340,9 @@ export default function RulesPage() {
 
         {/* ── PORTFOLIO VIEW ── */}
         {view === 'portfolio' && (
-          enriched.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              No positions found. Add positions in Portfolios first.
+          (!portLoading && !positionsLoaded) || (portLoading) ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading positions...
             </div>
           ) : !ran ? (
             <div style={{ textAlign: 'center', padding: '4rem 2rem' }}>
@@ -347,15 +351,19 @@ export default function RulesPage() {
                 Ready to analyse
               </div>
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '1.5rem' }}>
-                {enriched.length} positions · {portfolios.length} portfolio{portfolios.length !== 1 ? 's' : ''} · {fmtUSD(total)} total
+                {enriched.length} position{enriched.length !== 1 ? 's' : ''} · {portfolios.length} portfolio{portfolios.length !== 1 ? 's' : ''} · {fmtUSD(total)} total
               </div>
-              <button
-                className="btn btn-primary"
-                onClick={() => setRan(true)}
-                style={{ gap: '0.5rem', padding: '0.65rem 1.5rem', fontSize: '0.85rem' }}
-              >
-                <Zap size={14} /> Run portfolio analysis
-              </button>
+              {enriched.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No positions found — add positions in Portfolios first.</p>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setRan(true)}
+                  style={{ gap: '0.5rem', padding: '0.65rem 1.5rem', fontSize: '0.85rem' }}
+                >
+                  <Zap size={14} /> Run portfolio analysis
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -371,9 +379,13 @@ export default function RulesPage() {
 
         {/* ── INDIVIDUAL VIEW ── */}
         {view === 'individual' && (
-          enriched.length === 0 ? (
+          enriched.length === 0 && positionsLoaded ? (
             <div style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
               No positions found. Add positions in Portfolios first.
+            </div>
+          ) : enriched.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200, gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading positions...
             </div>
           ) : (
             <>
