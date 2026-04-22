@@ -102,3 +102,16 @@ export async function getSnapshots(portfolioId) {
   const snap = await getDocs(q)
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
+
+// ── TRADE HISTORY ─────────────────────────────────────────────────────────────
+
+export async function addTradeHistory(userId, data) {
+  if (IS_DEMO) return demo.addTradeHistory(userId, data)
+  return addDoc(collection(db, 'tradeHistory'), { ...data, userId, closedAt: serverTimestamp() })
+}
+
+export function subscribeTradeHistory(userId, callback) {
+  if (IS_DEMO) return demo.subscribeTradeHistory(userId, callback)
+  const q = query(collection(db, 'tradeHistory'), where('userId', '==', userId), orderBy('closedAt', 'desc'))
+  return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+}

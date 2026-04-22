@@ -9,6 +9,7 @@ import PortfolioDetailPage from './pages/PortfolioDetailPage'
 import JournalPage from './pages/JournalPage'
 import InsightsPage from './pages/InsightsPage'
 import RulesPage from './pages/RulesPage'
+import TradeHistoryPage from './pages/TradeHistoryPage'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="journal" element={<JournalPage />} />
         <Route path="insights" element={<InsightsPage />} />
         <Route path="rules" element={<RulesPage />} />
+        <Route path="trade-history" element={<TradeHistoryPage />} />
       </Route>
     </Routes>
   )

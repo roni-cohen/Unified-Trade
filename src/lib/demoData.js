@@ -32,11 +32,12 @@ let _journal = [
 ]
 
 let _snapshots = []
+let _tradeHistory = []
 let _idCounter = 100
 
 function uid() { return 'demo_' + (++_idCounter) }
 
-const _listeners = { portfolios: [], positions: {}, journal: [] }
+const _listeners = { portfolios: [], positions: {}, journal: [], tradeHistory: [] }
 
 function notifyPortfolios() {
   _listeners.portfolios.forEach(fn => fn([..._portfolios]))
@@ -78,6 +79,11 @@ export async function deletePortfolio(id) {
   _positions = _positions.filter(p => p.portfolioId !== id)
   notifyPortfolios()
   Object.keys(_listeners.positions).forEach(pid => notifyPositions(pid))
+}
+
+export async function updatePortfolioCash(portfolioId, cash) {
+  _portfolios = _portfolios.map(p => p.id === portfolioId ? { ...p, cash: parseFloat(cash) || 0 } : p)
+  notifyPortfolios()
 }
 
 // ── POSITIONS ────────────────────────────────────────────────────────────────
@@ -165,4 +171,23 @@ export async function saveSnapshot(portfolioId, userId, totalValue) {
 
 export async function getSnapshots(portfolioId) {
   return _snapshots.filter(s => s.portfolioId === portfolioId)
+}
+
+// ── TRADE HISTORY ─────────────────────────────────────────────────────────────
+
+export async function addTradeHistory(userId, data) {
+  const id = uid()
+  _tradeHistory.unshift({ id, userId, closedAt: { seconds: Date.now() / 1000 }, ...data })
+  const sorted = [..._tradeHistory].sort((a, b) => b.closedAt.seconds - a.closedAt.seconds)
+  _listeners.tradeHistory.forEach(fn => fn(sorted))
+  return { id }
+}
+
+export function subscribeTradeHistory(userId, callback) {
+  _listeners.tradeHistory.push(callback)
+  const sorted = [..._tradeHistory].sort((a, b) => b.closedAt.seconds - a.closedAt.seconds)
+  setTimeout(() => callback(sorted), 0)
+  return () => {
+    _listeners.tradeHistory = _listeners.tradeHistory.filter(fn => fn !== callback)
+  }
 }

@@ -81,6 +81,8 @@ export default function DashboardPage() {
 
     const totalGainLoss = totalValue - totalCost
     const totalGainLossPct = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0
+    const totalCash = portfolios.reduce((s, p) => s + (p.cash || 0), 0)
+    const grandTotal = totalValue + totalCash
 
     // Allocation by portfolio
     const byPortfolio = {}
@@ -97,6 +99,7 @@ export default function DashboardPage() {
 
     return {
       totalValue, totalCost, totalGainLoss, totalGainLossPct,
+      totalCash, grandTotal,
       allocationData: Object.values(byPortfolio).filter(d => d.value > 0),
       movers,
       positionCount: enriched.length
@@ -107,7 +110,7 @@ export default function DashboardPage() {
   const sparkData = useMemo(() => {
     const points = []
     const base = stats.totalCost || 10000
-    const now = stats.totalValue || base
+    const now = stats.grandTotal || base
     for (let i = 6; i >= 0; i--) {
       const d = new Date()
       d.setDate(d.getDate() - i)
@@ -150,7 +153,7 @@ export default function DashboardPage() {
       <div className="page-body">
         {/* Stat cards */}
         <div className="grid-4" style={{ marginBottom:'1.5rem' }}>
-          <StatCard label="Total Portfolio Value" value={fmtUSD(stats.totalValue)} color="accent" icon={<DollarSign size={14} />} />
+          <StatCard label="Total Portfolio Value" value={fmtUSD(stats.grandTotal)} color="accent" icon={<DollarSign size={14} />} />
           <StatCard label="Total Invested" value={fmtUSD(stats.totalCost)} color="blue" icon={<DollarSign size={14} />} />
           <StatCard
             label="Total Return"
@@ -169,7 +172,7 @@ export default function DashboardPage() {
           <div className="card" style={{ gridColumn: '1 / 2' }}>
             <div style={{ fontSize:'0.65rem', letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--text-muted)', marginBottom:'0.25rem' }}>Portfolio Value Trend</div>
             <div style={{ fontFamily:'var(--font-display)', fontSize:'1.3rem', fontWeight:700, marginBottom:'1rem' }}>
-              {fmtUSD(stats.totalValue)}
+              {fmtUSD(stats.grandTotal)}
               <span style={{ fontSize:'0.8rem', marginLeft:'0.5rem', color: isUp ? 'var(--green)' : 'var(--red)' }}>
                 {fmtPct(stats.totalGainLossPct)}
               </span>

@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../lib/AuthContext'
 import {
   LayoutDashboard, Briefcase, BookOpen,
-  Lightbulb, LogOut, TrendingUp, Menu, X, Zap, ShieldCheck
+  Lightbulb, LogOut, TrendingUp, Menu, X, Zap, ShieldCheck, History
 } from 'lucide-react'
 import { useState } from 'react'
 import { getTheme, setTheme } from '../../lib/theme'
@@ -13,7 +13,8 @@ const NAV = [
   { to: '/portfolios',label: 'Portfolios',   icon: Briefcase },
   { to: '/journal',   label: 'Journal',      icon: BookOpen },
   { to: '/insights',  label: 'Insights',     icon: Lightbulb },
-  { to: '/rules',     label: 'Rule Analyst', icon: ShieldCheck },
+  { to: '/rules',         label: 'Rule Analyst',  icon: ShieldCheck },
+  { to: '/trade-history', label: 'Trade History', icon: History },
 ]
 
 export default function AppShell() {

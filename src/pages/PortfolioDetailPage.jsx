@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
-import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot, updatePortfolioCash } from '../lib/db'
+import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot, updatePortfolioCash, addTradeHistory } from '../lib/db'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile, fetchTickerDescription } from '../lib/stockApi'
 import { usePortfolios } from '../hooks/usePortfolios'
@@ -14,7 +14,7 @@ import {
 import {
   ArrowLeft, Plus, Trash2, Edit2, RefreshCw, TrendingUp, TrendingDown,
   X, Check, DollarSign, ChevronUp, ChevronDown, ChevronsUpDown,
-  Newspaper, Info, ExternalLink, Wallet
+  Newspaper, Info, ExternalLink, Wallet, LogOut
 } from 'lucide-react'
 
 function fmtUSD(n) {
@@ -91,6 +91,11 @@ export default function PortfolioDetailPage() {
   const [sellForm, setSellForm] = useState({ ticker: '', shares: '', price: '' })
   const [savingCash, setSavingCash] = useState(false)
 
+  // Close position modal
+  const [closeModal, setCloseModal] = useState(null) // enriched pos object or null
+  const [closeForm, setCloseForm] = useState({ shares: '', sellPrice: '' })
+  const [savingClose, setSavingClose] = useState(false)
+
   // News panel
   const [newsPanel, setNewsPanel] = useState(null) // ticker or null
   const [news, setNews] = useState([])
@@ -161,7 +166,7 @@ export default function PortfolioDetailPage() {
   useEffect(() => {
     if (!tickers.length || !Object.keys(prices).length) return
     const totalValue = enriched.reduce((s, p) => s + p.currentValue, 0)
-    if (totalValue > 0) saveSnapshot(id, user.uid, totalValue)
+    if (totalValue > 0) saveSnapshot(id, user.uid, totalValue + (portfolio?.cash || 0))
   }, [lastUpdated])
 
   useEffect(() => {
@@ -263,8 +268,61 @@ export default function PortfolioDetailPage() {
   }
 
   const handleDelete = async (pid) => {
-    if (!confirm('Remove this position?')) return
+    if (!confirm('Remove this position without recording a trade? Use "End Position" to log a sale.')) return
     await deletePosition(pid)
+  }
+
+  const openCloseModal = (pos) => {
+    setCloseModal(pos)
+    setCloseForm({ shares: String(pos.shares), sellPrice: String(pos.currentPrice || pos.avgCost) })
+  }
+
+  const handleClosePosition = async () => {
+    const sharesToSell = parseFloat(closeForm.shares)
+    const sellPrice = parseFloat(closeForm.sellPrice)
+    if (!sharesToSell || sharesToSell <= 0 || !sellPrice || sellPrice <= 0) return
+    if (sharesToSell > closeModal.shares) return
+
+    setSavingClose(true)
+    try {
+      const proceeds = sharesToSell * sellPrice
+      const costBasis = sharesToSell * closeModal.avgCost
+      const pnl = proceeds - costBasis
+      const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0
+      const isFullClose = sharesToSell >= closeModal.shares
+
+      if (isFullClose) {
+        await deletePosition(closeModal.id)
+      } else {
+        await updatePosition(closeModal.id, {
+          ...closeModal,
+          shares: parseFloat((closeModal.shares - sharesToSell).toFixed(10)),
+          avgCost: closeModal.avgCost,
+        })
+      }
+
+      await updatePortfolioCash(id, (portfolio?.cash || 0) + proceeds)
+
+      await addTradeHistory(user.uid, {
+        ticker: closeModal.ticker.toUpperCase(),
+        portfolioId: id,
+        portfolioName: portfolio?.name || '',
+        shares: sharesToSell,
+        avgCost: closeModal.avgCost,
+        sellPrice,
+        proceeds,
+        costBasis,
+        pnl,
+        pnlPct,
+        type: isFullClose ? 'full' : 'partial',
+        closedDate: new Date().toISOString().split('T')[0],
+      })
+
+      setCloseModal(null)
+      setCloseForm({ shares: '', sellPrice: '' })
+    } finally {
+      setSavingClose(false)
+    }
   }
 
   const isUp = totals.totalGL >= 0
@@ -417,7 +475,7 @@ export default function PortfolioDetailPage() {
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
               <div>
-                <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Portfolio Value Over Time</div>
+                <div style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Portfolio Value Over Time (equity + cash)</div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 700, marginTop: '0.2rem' }}>
                   {fmtUSD(snapshots[snapshots.length - 1]?.value)}
                   {snapshots.length > 1 && (() => {
@@ -527,12 +585,48 @@ export default function PortfolioDetailPage() {
                           >
                             <Newspaper size={12} />
                           </button>
-                          <button className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }} onClick={() => startEdit(pos)}><Edit2 size={12} /></button>
-                          <button className="btn btn-danger" style={{ padding: '0.3rem 0.5rem' }} onClick={() => handleDelete(pos.id)}><Trash2 size={12} /></button>
+                          <button className="btn btn-ghost" style={{ padding: '0.3rem 0.5rem' }} onClick={() => startEdit(pos)} title="Edit position"><Edit2 size={12} /></button>
+                          <button
+                            className="btn btn-ghost"
+                            style={{ padding: '0.3rem 0.5rem', color: 'var(--amber)', borderColor: 'rgba(245,166,35,0.3)' }}
+                            onClick={() => openCloseModal(pos)}
+                            title="End position / sell"
+                          >
+                            <LogOut size={12} />
+                          </button>
+                          <button className="btn btn-danger" style={{ padding: '0.3rem 0.5rem' }} onClick={() => handleDelete(pos.id)} title="Delete (no trade log)"><Trash2 size={12} /></button>
                         </div>
                       </td>
                     </tr>
                   ))}
+                  {cash > 0 && (
+                    <tr style={{ background: 'rgba(0,200,150,0.03)', borderTop: '2px solid var(--border)' }}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--green)' }}>
+                          <Wallet size={11} /> CASH
+                        </div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Available balance</div>
+                      </td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td style={{ fontWeight: 700, color: 'var(--green)' }}>{fmtUSD(cash)}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>{fmtUSD(cash)}</td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td style={{ color: 'var(--text-muted)' }}>—</td>
+                      <td><span className="tag tag-green">Liquid</span></td>
+                      <td>
+                        <button
+                          className="btn btn-ghost"
+                          style={{ padding: '0.3rem 0.5rem' }}
+                          onClick={() => { setShowCashEditor(true); setCashMode('set'); setCashInput(String(cash)) }}
+                          title="Edit cash balance"
+                        >
+                          <Edit2 size={12} />
+                        </button>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -738,6 +832,96 @@ export default function PortfolioDetailPage() {
               <button className="btn btn-ghost" onClick={() => setShowCashEditor(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={handleCashSave} disabled={savingCash} style={{ background: 'var(--green)', color: '#000' }}>
                 {savingCash ? 'Saving...' : <><Check size={13} /> Update Cash</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Close Position Modal */}
+      {closeModal && (
+        <div className="modal-overlay" onClick={() => setCloseModal(null)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <LogOut size={16} color="var(--amber)" /> End Position · {closeModal.ticker.toUpperCase()}
+              </div>
+              <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setCloseModal(null)}><X size={16} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem' }}>
+              {[
+                { label: 'Held Shares', value: closeModal.shares },
+                { label: 'Avg Cost', value: fmtUSD(closeModal.avgCost) },
+                { label: 'Current Price', value: fmtUSD(closeModal.currentPrice) },
+              ].map((s, i) => (
+                <div key={i} style={{ padding: '0.6rem 0.75rem', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>{s.label}</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem' }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              <Field label={`Shares to sell (max ${closeModal.shares})`}>
+                <input
+                  type="number" step="any" min="0.0001" max={closeModal.shares}
+                  value={closeForm.shares}
+                  onChange={e => setCloseForm(f => ({ ...f, shares: e.target.value }))}
+                  autoFocus
+                />
+              </Field>
+              <Field label="Sell price per share">
+                <input
+                  type="number" step="any" min="0.0001"
+                  value={closeForm.sellPrice}
+                  onChange={e => setCloseForm(f => ({ ...f, sellPrice: e.target.value }))}
+                />
+              </Field>
+            </div>
+
+            {closeForm.shares && closeForm.sellPrice && (() => {
+              const sharesToSell = parseFloat(closeForm.shares)
+              const sellPrice = parseFloat(closeForm.sellPrice)
+              if (!sharesToSell || !sellPrice) return null
+              const proceeds = sharesToSell * sellPrice
+              const costBasis = sharesToSell * closeModal.avgCost
+              const pnl = proceeds - costBasis
+              const isPartial = sharesToSell < closeModal.shares
+              return (
+                <div style={{ marginBottom: '1.25rem', padding: '0.85rem 1rem', background: pnl >= 0 ? 'rgba(0,200,150,0.07)' : 'rgba(255,77,109,0.07)', border: `1px solid ${pnl >= 0 ? 'rgba(0,200,150,0.2)' : 'rgba(255,77,109,0.2)'}`, borderRadius: 'var(--radius-sm)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>Proceeds</div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{fmtUSD(proceeds)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>Cost Basis</div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{fmtUSD(costBasis)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>Realized P&L</div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                      {pnl >= 0 ? '+' : ''}{fmtUSD(pnl)}
+                    </div>
+                  </div>
+                  {isPartial && (
+                    <div style={{ gridColumn: '1 / -1', fontSize: '0.72rem', color: 'var(--amber)', marginTop: '0.25rem' }}>
+                      Partial close — {(closeModal.shares - sharesToSell).toFixed(4)} shares remain in portfolio
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setCloseModal(null)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'var(--amber)', color: '#000' }}
+                onClick={handleClosePosition}
+                disabled={savingClose || !closeForm.shares || !closeForm.sellPrice || parseFloat(closeForm.shares) > closeModal.shares}
+              >
+                {savingClose ? 'Closing...' : <><LogOut size={13} /> Confirm Close</>}
               </button>
             </div>
           </div>
