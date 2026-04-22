@@ -122,26 +122,62 @@ export async function fetchTickerProfile(ticker) {
   }
 }
 
+async function calcBeta(ticker) {
+  try {
+    const [stockJson, spyJson] = await Promise.all([
+      fetchYahoo(ticker, '1wk', '1y'),
+      fetchYahoo('SPY',  '1wk', '1y'),
+    ])
+    const stockResult = stockJson?.chart?.result?.[0]
+    const spyResult   = spyJson?.chart?.result?.[0]
+    if (!stockResult || !spyResult) return null
+
+    const stockTs    = stockResult.timestamp || []
+    const stockClose = stockResult.indicators?.quote?.[0]?.close || []
+    const spyTs      = spyResult.timestamp || []
+    const spyClose   = spyResult.indicators?.quote?.[0]?.close || []
+
+    const stockMap = {}
+    stockTs.forEach((ts, i) => { if (stockClose[i] != null) stockMap[ts] = stockClose[i] })
+    const spyMap = {}
+    spyTs.forEach((ts, i) => { if (spyClose[i] != null) spyMap[ts] = spyClose[i] })
+
+    const common = Object.keys(stockMap).filter(ts => spyMap[ts]).sort((a, b) => a - b)
+    if (common.length < 12) return null
+
+    const sRets = [], mRets = []
+    for (let i = 1; i < common.length; i++) {
+      sRets.push((stockMap[common[i]] - stockMap[common[i - 1]]) / stockMap[common[i - 1]])
+      mRets.push((spyMap[common[i]]   - spyMap[common[i - 1]])   / spyMap[common[i - 1]])
+    }
+
+    const n = sRets.length
+    const ms = sRets.reduce((a, v) => a + v, 0) / n
+    const mm = mRets.reduce((a, v) => a + v, 0) / n
+    const cov    = sRets.reduce((a, v, i) => a + (v - ms) * (mRets[i] - mm), 0) / n
+    const varMkt = mRets.reduce((a, v) => a + (v - mm) ** 2, 0) / n
+
+    return varMkt > 0 ? parseFloat((cov / varMkt).toFixed(2)) : null
+  } catch {
+    return null
+  }
+}
+
 export async function fetchTickerStats(ticker) {
   const key = ticker.toUpperCase()
   const cached = STATS_CACHE.get(key)
   if (cached && Date.now() - cached.ts < STATS_TTL) return cached.data
 
   try {
-    const chartJson = await fetchYahoo(key, '1d', '1y')
+    const chartJson = await fetchYahoo(key, '1d', '1d')
     const meta = chartJson?.chart?.result?.[0]?.meta
 
-    let beta = null
-    try {
-      const res = await fetch(`/api/yahoo/v10/finance/quoteSummary/${key}?modules=defaultKeyStatistics`)
-      const json = await res.json()
-      beta = json?.quoteSummary?.result?.[0]?.defaultKeyStatistics?.beta?.raw ?? null
-    } catch { /* beta unavailable */ }
+    const beta = await calcBeta(key)
 
     const data = {
+      beta,
       low52w:  meta?.fiftyTwoWeekLow  ?? null,
       high52w: meta?.fiftyTwoWeekHigh ?? null,
-      beta,
     }
 
     STATS_CACHE.set(key, { data, ts: Date.now() })
