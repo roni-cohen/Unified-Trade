@@ -3,6 +3,8 @@ const CACHE = new Map()
 const CACHE_TTL = 60_000
 const NEWS_CACHE = new Map()
 const NEWS_TTL = 300_000 // 5 minutes
+const STATS_CACHE = new Map()
+const STATS_TTL = 3_600_000 // 1 hour
 
 function yahooUrl(ticker, interval, range) {
   return `/api/yahoo/v8/finance/chart/${ticker}?interval=${interval}&range=${range}`
@@ -117,6 +119,36 @@ export async function fetchTickerProfile(ticker) {
     }
   } catch (err) {
     return null
+  }
+}
+
+export async function fetchTickerStats(ticker) {
+  const key = ticker.toUpperCase()
+  const cached = STATS_CACHE.get(key)
+  if (cached && Date.now() - cached.ts < STATS_TTL) return cached.data
+
+  try {
+    const chartJson = await fetchYahoo(key, '1d', '1y')
+    const meta = chartJson?.chart?.result?.[0]?.meta
+
+    let beta = null
+    try {
+      const res = await fetch(`/api/yahoo/v10/finance/quoteSummary/${key}?modules=defaultKeyStatistics`)
+      const json = await res.json()
+      beta = json?.quoteSummary?.result?.[0]?.defaultKeyStatistics?.beta?.raw ?? null
+    } catch { /* beta unavailable */ }
+
+    const data = {
+      low52w:  meta?.fiftyTwoWeekLow  ?? null,
+      high52w: meta?.fiftyTwoWeekHigh ?? null,
+      beta,
+    }
+
+    STATS_CACHE.set(key, { data, ts: Date.now() })
+    return data
+  } catch (err) {
+    console.warn(`Stats fetch failed for ${key}:`, err.message)
+    return { low52w: null, high52w: null, beta: null }
   }
 }
 

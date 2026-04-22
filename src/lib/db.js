@@ -50,14 +50,25 @@ export async function addPosition(portfolioId, userId, data) {
     ...data, portfolioId, userId,
     shares:  parseFloat(data.shares),
     avgCost: parseFloat(data.avgCost),
-    sector:  data.sector || null,
+    sector:  data.sector  || null,
+    beta:    data.beta    ? parseFloat(data.beta)    : null,
+    low52w:  data.low52w  ? parseFloat(data.low52w)  : null,
+    high52w: data.high52w ? parseFloat(data.high52w) : null,
     addedAt: serverTimestamp()
   })
 }
 
 export async function updatePosition(id, data) {
   if (IS_DEMO) return demo.updatePosition(id, data)
-  return updateDoc(doc(db, 'positions', id), { ...data, shares: parseFloat(data.shares), avgCost: parseFloat(data.avgCost), sector: data.sector || null })
+  return updateDoc(doc(db, 'positions', id), {
+    ...data,
+    shares:  parseFloat(data.shares),
+    avgCost: parseFloat(data.avgCost),
+    sector:  data.sector  || null,
+    beta:    data.beta    ? parseFloat(data.beta)    : null,
+    low52w:  data.low52w  ? parseFloat(data.low52w)  : null,
+    high52w: data.high52w ? parseFloat(data.high52w) : null,
+  })
 }
 
 export async function deletePosition(id) {

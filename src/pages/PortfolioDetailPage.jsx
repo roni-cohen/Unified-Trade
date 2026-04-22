@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import { subscribePositions, addPosition, updatePosition, deletePosition, saveSnapshot, updatePortfolioCash, addTradeHistory } from '../lib/db'
 import { useLivePrices } from '../hooks/useLivePrices'
-import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile, fetchTickerDescription } from '../lib/stockApi'
+import { fetchHistoricalData, fetchTickerNews, fetchTickerProfile, fetchTickerDescription, fetchTickerStats } from '../lib/stockApi'
 import { usePortfolios } from '../hooks/usePortfolios'
 import { getSnapshots } from '../lib/db'
 import {
@@ -71,8 +71,9 @@ export default function PortfolioDetailPage() {
   const [positions, setPositions] = useState([])
   const [showAdd, setShowAdd] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' })
+  const [form, setForm] = useState({ ticker: '', shares: '', avgCost: '', notes: '', sector: '', beta: '', low52w: '', high52w: '' })
   const [saving, setSaving] = useState(false)
+  const [autoFillLoading, setAutoFillLoading] = useState(false)
 
   const [histData, setHistData] = useState([])
   const [range, setRange] = useState('1m')
@@ -254,7 +255,7 @@ export default function PortfolioDetailPage() {
       } else {
         await addPosition(id, user.uid, form)
       }
-      setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' })
+      setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '', beta: '', low52w: '', high52w: '' })
       setShowAdd(false)
     } finally {
       setSaving(false)
@@ -263,8 +264,33 @@ export default function PortfolioDetailPage() {
 
   const startEdit = (pos) => {
     setEditingId(pos.id)
-    setForm({ ticker: pos.ticker, shares: String(pos.shares), avgCost: String(pos.avgCost), notes: pos.notes || '', sector: pos.sector || '' })
+    setForm({
+      ticker:  pos.ticker,
+      shares:  String(pos.shares),
+      avgCost: String(pos.avgCost),
+      notes:   pos.notes   || '',
+      sector:  pos.sector  || '',
+      beta:    pos.beta    != null ? String(pos.beta)    : '',
+      low52w:  pos.low52w  != null ? String(pos.low52w)  : '',
+      high52w: pos.high52w != null ? String(pos.high52w) : '',
+    })
     setShowAdd(true)
+  }
+
+  const handleAutoFill = async () => {
+    if (!form.ticker) return
+    setAutoFillLoading(true)
+    try {
+      const stats = await fetchTickerStats(form.ticker)
+      setForm(f => ({
+        ...f,
+        beta:    stats.beta    != null ? String(parseFloat(stats.beta.toFixed(2)))    : f.beta,
+        low52w:  stats.low52w  != null ? String(parseFloat(stats.low52w.toFixed(2)))  : f.low52w,
+        high52w: stats.high52w != null ? String(parseFloat(stats.high52w.toFixed(2))) : f.high52w,
+      }))
+    } finally {
+      setAutoFillLoading(false)
+    }
   }
 
   const handleDelete = async (pid) => {
@@ -349,7 +375,7 @@ export default function PortfolioDetailPage() {
           <button className="btn btn-ghost" onClick={() => { setShowCashEditor(true); setCashMode('set'); setCashInput(String(cash)) }} style={{ color: 'var(--green)', borderColor: 'rgba(0,200,150,0.3)' }}>
             <Wallet size={13} /> Cash
           </button>
-          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '' }); setShowAdd(true) }}>
+          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm({ ticker: '', shares: '', avgCost: '', notes: '', sector: '', beta: '', low52w: '', high52w: '' }); setShowAdd(true) }}>
             <Plus size={14} /> Add Position
           </button>
         </div>
@@ -959,6 +985,36 @@ export default function PortfolioDetailPage() {
                   {SECTORS.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
+
+              {/* Beta + 52w range */}
+              <div style={{ paddingTop: '0.25rem', borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-muted)' }}>Risk data — used by Rule Analyst</span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: '0.7rem', padding: '0.25rem 0.6rem', gap: '0.3rem' }}
+                    onClick={handleAutoFill}
+                    disabled={autoFillLoading || !form.ticker}
+                    title="Auto-fill from Yahoo Finance"
+                  >
+                    <RefreshCw size={11} style={{ animation: autoFillLoading ? 'spin 1s linear infinite' : 'none' }} />
+                    {autoFillLoading ? 'Fetching…' : 'Auto-fill from Yahoo'}
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.65rem' }}>
+                  <Field label="Beta">
+                    <input type="number" step="0.01" min="0" value={form.beta} onChange={e => setForm(f => ({ ...f, beta: e.target.value }))} placeholder="1.00" />
+                  </Field>
+                  <Field label="52W Low">
+                    <input type="number" step="0.01" min="0" value={form.low52w} onChange={e => setForm(f => ({ ...f, low52w: e.target.value }))} placeholder="0.00" />
+                  </Field>
+                  <Field label="52W High">
+                    <input type="number" step="0.01" min="0" value={form.high52w} onChange={e => setForm(f => ({ ...f, high52w: e.target.value }))} placeholder="0.00" />
+                  </Field>
+                </div>
+              </div>
+
               <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
                 <button type="button" className="btn btn-ghost" onClick={() => setShowAdd(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
