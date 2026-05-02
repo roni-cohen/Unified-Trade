@@ -47,19 +47,19 @@ export default function DashboardPage() {
   const [allPositions, setAllPositions] = useState([])
 
   useEffect(() => {
-    if (!portfolios.length) { setAllPositions([]); return }
+    if (!portfolios.length || !user) { setAllPositions([]); return }
     const unsubs = []
     const byPortfolio = {}
 
     portfolios.forEach(p => {
-      const unsub = subscribePositions(p.id, positions => {
+      const unsub = subscribePositions(p.id, user.uid, positions => {
         byPortfolio[p.id] = positions
         setAllPositions(Object.values(byPortfolio).flat())
       })
       unsubs.push(unsub)
     })
     return () => unsubs.forEach(u => u())
-  }, [portfolios.map(p => p.id).join(',')])
+  }, [portfolios.map(p => p.id).join(','), user?.uid])
 
   const tickers = useMemo(() => [...new Set(allPositions.map(p => p.ticker.toUpperCase()))], [allPositions])
   const { prices, loading: priceLoading, lastUpdated, refresh } = useLivePrices(tickers)

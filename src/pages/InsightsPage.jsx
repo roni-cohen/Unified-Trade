@@ -26,14 +26,14 @@ export default function InsightsPage() {
   const [activeSection, setActiveSection] = useState('overview')
 
   useEffect(() => {
-    if (!portfolios.length) return
+    if (!portfolios.length || !user) return
     const byPort = {}
-    const unsubs = portfolios.map(p => subscribePositions(p.id, positions => {
+    const unsubs = portfolios.map(p => subscribePositions(p.id, user.uid, positions => {
       byPort[p.id] = positions
       setAllPositions(Object.values(byPort).flat())
     }))
     return () => unsubs.forEach(u => u())
-  }, [portfolios.map(p => p.id).join(',')])
+  }, [portfolios.map(p => p.id).join(','), user?.uid])
 
   useEffect(() => {
     if (!user) return

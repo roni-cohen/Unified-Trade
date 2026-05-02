@@ -36,5 +36,10 @@ service cloud.firestore {
       allow read, update, delete: if isOwner(resource);
       allow create: if isOwnerOnCreate();
     }
+
+    match /tradeHistory/{tradeId} {
+      allow read, update, delete: if isOwner(resource);
+      allow create: if isOwnerOnCreate();
+    }
   }
 }

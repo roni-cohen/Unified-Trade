@@ -38,9 +38,9 @@ export async function updatePortfolioCash(portfolioId, cash) {
 
 // ── POSITIONS ────────────────────────────────────────────────────────────────
 
-export function subscribePositions(portfolioId, callback) {
+export function subscribePositions(portfolioId, userId, callback) {
   if (IS_DEMO) return demo.subscribePositions(portfolioId, callback)
-  const q = query(collection(db, 'positions'), where('portfolioId', '==', portfolioId))
+  const q = query(collection(db, 'positions'), where('portfolioId', '==', portfolioId), where('userId', '==', userId))
   return onSnapshot(q, snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
 }
 
@@ -107,9 +107,9 @@ export async function saveSnapshot(portfolioId, userId, totalValue) {
   return addDoc(collection(db, 'snapshots'), { portfolioId, userId, totalValue, date: today, savedAt: serverTimestamp() })
 }
 
-export async function getSnapshots(portfolioId) {
+export async function getSnapshots(portfolioId, userId) {
   if (IS_DEMO) return demo.getSnapshots(portfolioId)
-  const q = query(collection(db, 'snapshots'), where('portfolioId', '==', portfolioId), orderBy('savedAt', 'asc'))
+  const q = query(collection(db, 'snapshots'), where('portfolioId', '==', portfolioId), where('userId', '==', userId), orderBy('savedAt', 'asc'))
   const snap = await getDocs(q)
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }

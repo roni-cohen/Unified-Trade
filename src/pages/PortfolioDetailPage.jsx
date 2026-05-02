@@ -109,15 +109,17 @@ export default function PortfolioDetailPage() {
   const [descLoading, setDescLoading] = useState(false)
 
   useEffect(() => {
-    const unsub = subscribePositions(id, data => setPositions(data))
+    if (!user) return
+    const unsub = subscribePositions(id, user.uid, data => setPositions(data))
     return unsub
-  }, [id])
+  }, [id, user?.uid])
 
   const tickers = useMemo(() => [...new Set(positions.map(p => p.ticker.toUpperCase()))], [positions])
   const { prices, loading: priceLoading, lastUpdated, refresh } = useLivePrices(tickers)
 
   useEffect(() => {
-    getSnapshots(id).then(data => {
+    if (!user) return
+    getSnapshots(id, user.uid).then(data => {
       const byDate = {}
       data.forEach(s => { byDate[s.date] = s.totalValue })
       const chartData = Object.entries(byDate)

@@ -1,6 +1,7 @@
 // src/pages/RulesPage.jsx
 import { useState, useEffect, useMemo } from 'react'
 import { usePortfolios } from '../hooks/usePortfolios'
+import { useAuth } from '../lib/AuthContext'
 import { subscribePositions } from '../lib/db'
 import { useLivePrices } from '../hooks/useLivePrices'
 import { ShieldCheck, RefreshCw, ChevronDown, Zap } from 'lucide-react'
@@ -250,6 +251,7 @@ function buildIndividualCats(pos, total) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function RulesPage() {
+  const { user } = useAuth()
   const { portfolios, loading: portLoading } = usePortfolios()
   const [allPositions, setAllPositions] = useState([])
   const [view, setView] = useState('portfolio')
@@ -258,10 +260,10 @@ export default function RulesPage() {
   const [positionsLoaded, setPositionsLoaded] = useState(false)
 
   useEffect(() => {
-    if (!portfolios.length) { setPositionsLoaded(true); return }
+    if (!portfolios.length || !user) { setPositionsLoaded(true); return }
     const byPort = {}
     let resolved = 0
-    const unsubs = portfolios.map(p => subscribePositions(p.id, positions => {
+    const unsubs = portfolios.map(p => subscribePositions(p.id, user.uid, positions => {
       byPort[p.id] = positions
       resolved++
       if (resolved >= portfolios.length) setPositionsLoaded(true)
